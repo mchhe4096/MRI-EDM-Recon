@@ -47,7 +47,6 @@ def main():
     p.add_argument("--num_cases", type=int, default=8)
     p.add_argument("--num_samples", type=int, default=8)
     p.add_argument("--steps", type=int, default=40)
-    p.add_argument("--step_size", type=float, default=0.1)
     p.add_argument("--dc", action="store_true")
 
     p.add_argument("--outdir", type=str, default="../outputs/samples")
@@ -107,7 +106,6 @@ def main():
                 dc=args.dc,
                 k_us=k_us,
                 mask=mask,
-                step_size=args.step_size,
             )
             samples.append(x[0].detach().cpu())
             save_img(os.path.join(case_dir, f"sample_{n:02d}.png"), to_mag(x[0]))

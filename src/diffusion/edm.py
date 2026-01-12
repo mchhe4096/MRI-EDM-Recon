@@ -47,7 +47,6 @@ class EDMTrainer:
         dc: bool = False,
         k_us: torch.Tensor | None = None,
         mask: torch.Tensor | None = None,
-        step_size: float = 0.1,
     ) -> torch.Tensor:
         """
         shape: (B,2,H,W)
@@ -63,5 +62,4 @@ class EDMTrainer:
             dc=dc,
             k_us=k_us,
             mask=mask,
-            step_size=float(step_size),
         )
