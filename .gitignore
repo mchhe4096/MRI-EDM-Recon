@@ -1,0 +1,6 @@
+# 所有缓存文件
+*.pyc
+/_pycache_
+
+# VSCode 工作区文件
+New.code-workspace
