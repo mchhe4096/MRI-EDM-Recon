@@ -10,6 +10,14 @@ from src.models.unet import SimpleUNetStub
 from src.diffusion.edm import EDMTrainer
 
 
+def psnr_mag(pred2, gt2, eps=1e-12):
+    pred = torch.sqrt(pred2[0]**2 + pred2[1]**2 + eps)
+    gt = torch.sqrt(gt2[0]**2 + gt2[1]**2 + eps)
+    mse = torch.mean((pred - gt) ** 2)
+    maxv = torch.max(gt)
+    return float((20 * torch.log10(maxv / torch.sqrt(mse + eps))).item())
+
+
 def to_mag(x2: torch.Tensor) -> torch.Tensor:
     # x2: [2,H,W] -> [H,W]
     return torch.sqrt(x2[0] ** 2 + x2[1] ** 2 + 1e-12)
@@ -111,14 +119,17 @@ def main():
             save_img(os.path.join(case_dir, f"sample_{n:02d}.png"), to_mag(x[0]))
 
         stack = torch.stack(samples, dim=0)               # [N,2,H,W]
-        mags = torch.sqrt(stack[:, 0] ** 2 + stack[:, 1] ** 2 + 1e-12)  # [N,H,W]
-        mean = mags.mean(dim=0)
+        mean2 = stack.mean(dim=0)  # [2,H,W] 复数均值
+        mags = torch.sqrt(stack[:, 0] ** 2 + stack[:, 1] ** 2 + 1e-12)
         std = mags.std(dim=0)
+        mean = torch.sqrt(mean2[0]**2 + mean2[1]**2 + 1e-12)  # [H,W]
 
         save_img(os.path.join(case_dir, "mean.png"), mean)
         save_img(os.path.join(case_dir, "std.png"), std)
+        case_psnr = psnr_mag(mean2, target[0].detach().cpu())
 
-        print(f"[case {case_idx:03d}] saved to {case_dir}  dc={args.dc}")
+        print(f"[case {case_idx:03d}] psnr(mean)={case_psnr:.2f} dB  saved to {case_dir}  dc={args.dc}")
+
 
 if __name__ == "__main__":
     main()
