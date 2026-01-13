@@ -106,6 +106,8 @@ def sample_with_optional_dc(
         # --- DC hook after each step (recommended) ---
         if dc:
             assert k_us is not None and mask is not None
-            x = dc_hard_kspace(x, k_us, mask)
+            if i >= int(0.7 * steps):
+                x = dc_hard_kspace(x, k_us, mask)
+
 
     return x
