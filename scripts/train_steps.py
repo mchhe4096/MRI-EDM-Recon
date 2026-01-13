@@ -64,7 +64,7 @@ def main():
     p.add_argument("--train_root", type=str, default="../debug_data/train")
     p.add_argument("--val_root", type=str, default="../debug_data/val")
     p.add_argument("--train_subset", type=int, default=0, help="0 means full dataset; otherwise use first N samples")
-    p.add_argument("--val_subset", type=int, default=256, help="0 means full; otherwise use first N for quick val")
+    p.add_argument("--val_subset", type=int, default=0, help="0 means full; otherwise use first N for quick val")
 
     # task
     p.add_argument("--accel", type=int, default=4)
@@ -83,11 +83,11 @@ def main():
     p.add_argument("--sigma_max", type=float, default=80.0)
 
     # logging/ckpt
-    p.add_argument("--outdir", type=str, default="outputs/ckpts")
+    p.add_argument("--outdir", type=str, default="../outputs/ckpts")
     p.add_argument("--log_every", type=int, default=50)
     p.add_argument("--val_every", type=int, default=1000)
     p.add_argument("--ckpt_every", type=int, default=2000)
-    p.add_argument("--resume", type=str, default="", help="path to ckpt to resume, e.g., outputs/ckpts/last.pt")
+    p.add_argument("--resume", type=str, default="", help="path to ckpt to resume, e.g., ../outputs/ckpts/last.pt")
 
     args = p.parse_args()
     set_seed(args.seed)
