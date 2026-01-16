@@ -61,8 +61,8 @@ def val_metrics(model, trainer, loader, device, max_batches=20):
 def main():
     p = argparse.ArgumentParser()
     # data
-    p.add_argument("--train_root", type=str, default="../debug_data/train")
-    p.add_argument("--val_root", type=str, default="../debug_data/val")
+    p.add_argument("--train_root", type=str, default="../data/train")
+    p.add_argument("--val_root", type=str, default="../data/val")
     p.add_argument("--train_subset", type=int, default=0, help="0 means full dataset; otherwise use first N samples")
     p.add_argument("--val_subset", type=int, default=0, help="0 means full; otherwise use first N for quick val")
 
