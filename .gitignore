@@ -4,3 +4,6 @@
 
 # VSCode 工作区文件
 New.code-workspace
+
+# 日记文件
+/logs

@@ -5,9 +5,10 @@ import random
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
+from torch.utils.tensorboard import SummaryWriter
 
 from src.data.datasets import PtKspaceReconDataset
-from src.models.unet import SimpleUNetStub
+from src.models.unet_v2 import UNetV2
 from src.diffusion.edm import EDMTrainer
 
 
@@ -114,7 +115,9 @@ def main():
 
     train_loader = DataLoader(
         train_ds, batch_size=args.batch, shuffle=True,
-        num_workers=args.num_workers, pin_memory=True, drop_last=True
+        num_workers=args.num_workers, pin_memory=True,
+        drop_last=True,persistent_workers=(args.num_workers > 0),
+        prefetch_factor=4,
     )
     val_loader = DataLoader(
         val_ds, batch_size=args.batch, shuffle=False,
@@ -122,8 +125,13 @@ def main():
     )
 
     cond_ch = 3 if args.include_mask_channel else 2
-    model = SimpleUNetStub(x_ch=2, cond_ch=cond_ch, out_ch=2).to(device)
+    model = UNetV2(x_ch=2, cond_ch=cond_ch, out_ch=2, base_ch=128).to(device)
     trainer = EDMTrainer(sigma_min=args.sigma_min, sigma_max=args.sigma_max)
+
+    logdir = "/root/tf-logs"
+    run_name = time.strftime("run_%Y%m%d_%H%M%S")
+    writer = SummaryWriter(log_dir=os.path.join(logdir, run_name))
+
     optim = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     start_step = 0
@@ -150,6 +158,8 @@ def main():
 
         model.train()
         loss = trainer.loss(model, x0, cond)
+        writer.add_scalar("train/loss", loss.item(), step)
+        writer.add_scalar("train/lr", optim.param_groups[0]["lr"], step)
 
         optim.zero_grad(set_to_none=True)
         loss.backward()
@@ -162,6 +172,8 @@ def main():
 
         if (step + 1) % args.val_every == 0:
             vloss, vpsnr = val_metrics(model, trainer, val_loader, device, max_batches=20)
+            writer.add_scalar("val/loss", vloss, step)
+            writer.add_scalar("val/psnr_proxy", vpsnr, step)
             print(f"[val @ {step+1:07d}] loss={vloss:.6f}  psnr(proxy)={vpsnr:.2f}dB")
 
         if (step + 1) % args.ckpt_every == 0:

@@ -44,7 +44,7 @@ def save_img(path: str, img_hw: torch.Tensor):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--ckpt", type=str, default="../outputs/ckpts/last.pt")
-    p.add_argument("--val_root", type=str, default="../debug_data/val")
+    p.add_argument("--val_root", type=str, default="../data/val")
 
     # dataset params (must match train)
     p.add_argument("--accel", type=int, default=4)

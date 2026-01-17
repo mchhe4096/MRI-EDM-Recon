@@ -23,12 +23,15 @@ class PtComplexImageDataset(Dataset):
 
     def __getitem__(self, idx: int):
         path = self.files[idx]
-        with open(path, "rb") as f:
-            obj = pickle.load(f)
-        img = obj["img"]
-        assert isinstance(img, np.ndarray) and np.iscomplexobj(img)
-        x_gt = complex_to_2ch(img)  # [2,H,W]
-        return {"x_gt": x_gt, "path": str(path)}
+        obj = torch.load(path, map_location="cpu")
+
+        # kspace_full: [H,W,2] -> [2,H,W]
+        k_full = obj["kspace_full"].permute(2, 0, 1).contiguous().float()
+
+        # 关键：用 kspace_full 计算 gt，保证与 DC/测量一致
+        x_gt = ifft2c(k_full.unsqueeze(0))[0]   # [2,H,W]
+
+        return {"x_gt": x_gt, "k_full": k_full, "path": str(path)}
 
 
 class PtKspaceReconDataset(Dataset):
