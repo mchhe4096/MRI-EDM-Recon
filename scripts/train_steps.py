@@ -162,7 +162,17 @@ def main():
         writer.add_scalar("train/lr", optim.param_groups[0]["lr"], step)
 
         optim.zero_grad(set_to_none=True)
+        optim.zero_grad(set_to_none=True)
         loss.backward()
+
+        # 1) 梯度裁剪，防止偶发爆炸把权重推崩
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+        # 2) 如果出现 NaN/Inf，直接跳过这步（不更新权重）
+        if not torch.isfinite(loss):
+            print(f"[warn] non-finite loss at step {step+1}, skip")
+            continue
+
         optim.step()
 
         if (step + 1) % args.log_every == 0:
@@ -172,8 +182,8 @@ def main():
 
         if (step + 1) % args.val_every == 0:
             vloss, vpsnr = val_metrics(model, trainer, val_loader, device, max_batches=20)
-            writer.add_scalar("val/loss", vloss, step)
-            writer.add_scalar("val/psnr_proxy", vpsnr, step)
+            writer.add_scalar("val/loss", vloss, step + 1)
+            writer.add_scalar("val/psnr_proxy", vpsnr, step + 1)
             print(f"[val @ {step+1:07d}] loss={vloss:.6f}  psnr(proxy)={vpsnr:.2f}dB")
 
         if (step + 1) % args.ckpt_every == 0:

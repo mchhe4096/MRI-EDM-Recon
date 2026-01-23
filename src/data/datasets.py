@@ -79,11 +79,21 @@ class PtKspaceReconDataset(Dataset):
         else:
             target = ifft2c(k_full.unsqueeze(0)).squeeze(0)
 
+        if not torch.isfinite(target).all():
+            raise ValueError(f"non-finite target in {path}")
+        if target.abs().max() > 1e3:
+            raise ValueError(f"abnormally large target in {path}, max={target.abs().max().item():.2e}")
+
         # conditioning A
         if self.include_mask_channel:
             cond = torch.cat([x_zf, mask.squeeze(0)], dim=0)  # [3,H,W]
         else:
             cond = x_zf  # [2,H,W]
+
+        if not torch.isfinite(cond).all():
+            raise ValueError(f"non-finite cond in {path}")
+        if cond.abs().max() > 1e3:
+            raise ValueError(f"abnormally large cond in {path}, max={cond.abs().max().item():.2e}")
 
         return {
             "target": target,

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
 from src.data.datasets import PtKspaceReconDataset
-from src.models.unet import SimpleUNetStub
+from src.models.unet_v2 import UNetV2
 from src.diffusion.edm import EDMTrainer
 
 
@@ -69,7 +69,7 @@ def main():
     sigma_max = float(train_args.get("sigma_max", 80.0))
 
     cond_ch = 3 if args.include_mask_channel else 2
-    model = SimpleUNetStub(x_ch=2, cond_ch=cond_ch, out_ch=2).to(device)
+    model = UNetV2(x_ch=2, cond_ch=cond_ch, out_ch=2, base_ch=128).to(device)
     model.load_state_dict(ckpt["model"], strict=True)
     model.eval()
 
