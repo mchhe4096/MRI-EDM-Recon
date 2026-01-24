@@ -57,6 +57,12 @@ def main():
     p.add_argument("--steps", type=int, default=40)
     p.add_argument("--dc", action="store_true")
 
+    # --- new: DC schedule (soft DC) ---
+    p.add_argument("--dc_start", type=float, default=0.6)   # start ratio, steps=20 -> i>=12
+    p.add_argument("--dc_every", type=int, default=2)       # apply every N steps after start
+    p.add_argument("--dc_lam", type=float, default=0.15)    # base lambda for soft DC
+    p.add_argument("--dc_ramp", action="store_true")        # ramp lam to 0.25 towards the end
+
     p.add_argument("--outdir", type=str, default="../outputs/samples")
     args = p.parse_args()
 
@@ -114,6 +120,12 @@ def main():
                 dc=args.dc,
                 k_us=k_us,
                 mask=mask,
+
+                # --- new: DC schedule (must be supported by trainer.sample -> sampler) ---
+                dc_start=args.dc_start,
+                dc_every=args.dc_every,
+                dc_lam=args.dc_lam,
+                dc_ramp=args.dc_ramp,
             )
             samples.append(x[0].detach().cpu())
             save_img(os.path.join(case_dir, f"sample_{n:02d}.png"), to_mag(x[0]))

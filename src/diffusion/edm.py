@@ -47,6 +47,12 @@ class EDMTrainer:
         dc: bool = False,
         k_us: torch.Tensor | None = None,
         mask: torch.Tensor | None = None,
+
+        # --- new: soft-DC schedule knobs ---
+        dc_start: float = 0.6,
+        dc_every: int = 2,
+        dc_lam: float = 0.15,
+        dc_ramp: bool = False,
     ) -> torch.Tensor:
         """
         shape: (B,2,H,W)
@@ -62,4 +68,10 @@ class EDMTrainer:
             dc=dc,
             k_us=k_us,
             mask=mask,
+
+            # --- new: pass-through to sampler ---
+            dc_start=dc_start,
+            dc_every=dc_every,
+            dc_lam=dc_lam,
+            dc_ramp=dc_ramp,
         )

@@ -1,7 +1,7 @@
 import torch
 from typing import Optional
 
-from src.mri.data_consistency import dc_hard_kspace
+from src.mri.data_consistency import dc_soft_kspace
 
 
 def _sigma_schedule_karras(
@@ -49,6 +49,10 @@ def sample_with_optional_dc(
     s_tmax: float = float("inf"),
     s_noise: float = 1.0,
     heun: bool = True,
+    dc_start: float = 0.6,
+    dc_every: int = 2,
+    dc_lam: float = 0.15,
+    dc_ramp: bool = False,
 ):
     """
     EDM-style sampler (Karras schedule + Euler / Heun).
@@ -103,11 +107,21 @@ def sample_with_optional_dc(
         else:
             x = x_euler
 
-        # --- DC hook after each step (recommended) ---
+        # --- DC hook (late + low-frequency + soft) ---
         if dc:
             assert k_us is not None and mask is not None
-            if i >= int(0.7 * steps):
-                x = dc_hard_kspace(x, k_us, mask)
+            start_i = int(dc_start * steps)
+            if (i >= start_i) and (dc_every > 0) and ((i - start_i) % dc_every == 0):
 
+                if dc_ramp:
+                    # linearly ramp lambda from dc_lam to 0.25 towards the end
+                    end_i = steps - 1
+                    denom = max(1, end_i - start_i)
+                    t = (i - start_i) / denom
+                    lam_i = (1.0 - t) * dc_lam + t * 0.25
+                else:
+                    lam_i = dc_lam
+
+                x = dc_soft_kspace(x, k_us, mask, lam=lam_i)
 
     return x
