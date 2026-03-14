@@ -21,10 +21,10 @@ def set_seed(seed: int):
 
 def save_ckpt(path, model, optim, step, args):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    torch.save(
-        {"step": step, "model": model.state_dict(), "optim": optim.state_dict(), "args": vars(args)},
-        path
-    )
+    state = {"step": step, "model": model.state_dict(), "optim": optim.state_dict(), "args": vars(args)}
+    tmp_path = f"{path}.tmp"
+    torch.save(state, tmp_path)
+    os.replace(tmp_path, path)
 
 
 @torch.no_grad()

@@ -52,10 +52,14 @@ def main():
     p.add_argument("--include_mask_channel", action="store_true")
 
     # sampling params
-    p.add_argument("--num_cases", type=int, default=8)
+    p.add_argument("--num_cases", type=int, default=8, help="Number of validation cases to sample. Use 0 for all.")
     p.add_argument("--num_samples", type=int, default=8)
     p.add_argument("--steps", type=int, default=40)
     p.add_argument("--dc", action="store_true")
+    p.add_argument("--save_pt", action=argparse.BooleanOptionalAction, default=True,
+                   help="Save per-case result.pt for metric evaluation.")
+    p.add_argument("--save_all_samples_pt", action="store_true",
+                   help="Also save all sampled reconstructions in result.pt (larger disk usage).")
 
     # --- new: DC schedule (soft DC) ---
     p.add_argument("--dc_start", type=float, default=0.6)   # start ratio, steps=20 -> i>=12
@@ -68,7 +72,14 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    ckpt = torch.load(args.ckpt, map_location="cpu", weights_only=False)
+    try:
+        ckpt = torch.load(args.ckpt, map_location="cpu", weights_only=False)
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to load checkpoint: {args.ckpt}\n"
+            "This checkpoint may be corrupted or incomplete. "
+            "Please use a valid step_*.pt/last.pt and retry."
+        ) from e
     train_args = ckpt.get("args", {})
 
     sigma_min = float(train_args.get("sigma_min", 0.002))
@@ -89,8 +100,11 @@ def main():
     )
     loader = DataLoader(ds, batch_size=1, shuffle=False, num_workers=0)
 
+    total_cases = len(ds) if args.num_cases == 0 else min(args.num_cases, len(ds))
+    print(f"[info] sampling {total_cases}/{len(ds)} cases from {args.val_root}")
+
     for case_idx, batch in enumerate(loader):
-        if case_idx >= args.num_cases:
+        if case_idx >= total_cases:
             break
 
         # NOTE: 你们已经把 dataset 改成返回 k_us 了（按你说的）
@@ -133,12 +147,30 @@ def main():
         stack = torch.stack(samples, dim=0)               # [N,2,H,W]
         mean2 = stack.mean(dim=0)  # [2,H,W] 复数均值
         mags = torch.sqrt(stack[:, 0] ** 2 + stack[:, 1] ** 2 + 1e-12)
-        std = mags.std(dim=0)
+        std = mags.std(dim=0, unbiased=False)
         mean = torch.sqrt(mean2[0]**2 + mean2[1]**2 + 1e-12)  # [H,W]
 
         save_img(os.path.join(case_dir, "mean.png"), mean)
         save_img(os.path.join(case_dir, "std.png"), std)
         case_psnr = psnr_mag(mean2, target[0].detach().cpu())
+
+        if args.save_pt:
+            path_item = batch.get("path", "")
+            if isinstance(path_item, (list, tuple)):
+                path_item = path_item[0] if len(path_item) > 0 else ""
+            result = {
+                "case_idx": case_idx,
+                "path": str(path_item),
+                "psnr_mean_db": case_psnr,
+                "mean2": mean2,                        # [2,H,W]
+                "std": std.detach().cpu(),             # [H,W]
+                "target": target[0].detach().cpu(),    # [2,H,W]
+                "x_zf": x_zf[0].detach().cpu(),        # [2,H,W]
+                "mask": mask[0].detach().cpu(),        # [1,H,W]
+            }
+            if args.save_all_samples_pt:
+                result["samples"] = stack              # [N,2,H,W]
+            torch.save(result, os.path.join(case_dir, "result.pt"))
 
         print(f"[case {case_idx:03d}] psnr(mean)={case_psnr:.2f} dB  saved to {case_dir}  dc={args.dc}")
 

@@ -1,5 +1,4 @@
 from pathlib import Path
-import pickle
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -45,7 +44,13 @@ class PtKspaceReconDataset(Dataset):
       cond:   [C,H,W]  where C=2 (x_zf) or C=3 (x_zf + mask)
       mask:   [1,H,W]
     """
-    def __init__(self, root: str, accel=4, center_frac=0.08, include_mask_channel=True):
+    def __init__(
+        self,
+        root: str,
+        accel=4,
+        center_frac=0.08,
+        include_mask_channel=True,
+    ):
         self.root = Path(root)
         self.files = sorted(self.root.glob("*.pt"))
         assert len(self.files) > 0, f"No .pt files found under {root}"
