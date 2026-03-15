@@ -23,6 +23,9 @@ python -m scripts.train_steps \
   --val_root /root/autodl-tmp/val_v2 \
   --include_mask_channel \
   --sigma_data 0.5 \
+  --warmup_steps 2000 \
+  --min_lr_ratio 0.05 \
+  --ema_decay 0.9999 \
   --steps 100000 \
   --batch 1 \
   --num_workers 2 \
@@ -38,6 +41,9 @@ python -m scripts.train_steps \
   --val_root /root/autodl-tmp/val_v2 \
   --include_mask_channel \
   --sigma_data 0.5 \
+  --warmup_steps 2000 \
+  --min_lr_ratio 0.05 \
+  --ema_decay 0.9999 \
   --steps 100000 \
   --batch 1 \
   --num_workers 2 \
@@ -82,6 +88,8 @@ python -m scripts.sample_val \
 
 补充：
 - 训练脚本使用 EDM 预条件目标，并支持 `--sigma_data`（默认 `0.5`）。
+- 训练默认启用 EMA（checkpoint 含 `ema_model`）和 warmup+cosine 学习率调度。
+- 采样默认使用 EMA 权重（可用 `--no-use_ema` 切回原始 `model` 权重）。
 - 采样脚本会优先读取 checkpoint 中的 `sigma_data`；不再支持旧 checkpoint 格式。
 - `UNetV2` 已升级为多层 sigma/time 注入结构，旧架构 checkpoint 不能直接 `--resume`。
 

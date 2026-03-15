@@ -56,6 +56,12 @@ def main():
     p.add_argument("--num_samples", type=int, default=8)
     p.add_argument("--steps", type=int, default=40)
     p.add_argument("--dc", action="store_true")
+    p.add_argument(
+        "--use_ema",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use EMA weights from checkpoint for sampling.",
+    )
     p.add_argument("--save_pt", action=argparse.BooleanOptionalAction, default=True,
                    help="Save per-case result.pt for metric evaluation.")
     p.add_argument("--save_all_samples_pt", action="store_true",
@@ -98,7 +104,23 @@ def main():
 
     cond_ch = 3 if args.include_mask_channel else 2
     model = UNetV2(x_ch=2, cond_ch=cond_ch, out_ch=2, base_ch=128).to(device)
-    model.load_state_dict(ckpt["model"], strict=True)
+    if args.use_ema:
+        if "ema_model" not in ckpt:
+            raise ValueError(
+                "Checkpoint does not contain ema_model. Use a new checkpoint with EMA or run with --no-use_ema."
+            )
+        weights = ckpt["ema_model"]
+        loaded_weights = "ema_model"
+    else:
+        weights = ckpt["model"]
+        loaded_weights = "model"
+    try:
+        model.load_state_dict(weights, strict=True)
+    except RuntimeError as e:
+        raise RuntimeError(
+            "Checkpoint is incompatible with current UNetV2 architecture. "
+            "Please retrain to get a new checkpoint after the sigma/time-embedding upgrade."
+        ) from e
     model.eval()
 
     trainer = EDMTrainer(
@@ -118,7 +140,7 @@ def main():
     total_cases = len(ds) if args.num_cases == 0 else min(args.num_cases, len(ds))
     print(
         f"[info] sampling {total_cases}/{len(ds)} cases from {args.val_root}  "
-        f"(sigma_data={sigma_data:.4g})"
+        f"(sigma_data={sigma_data:.4g}, weights={loaded_weights})"
     )
 
     for case_idx, batch in enumerate(loader):

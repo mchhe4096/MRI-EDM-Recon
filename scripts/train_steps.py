@@ -2,6 +2,8 @@ import os
 import time
 import argparse
 import random
+import math
+import copy
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
@@ -19,9 +21,56 @@ def set_seed(seed: int):
     torch.cuda.manual_seed_all(seed)
 
 
-def save_ckpt(path, model, optim, step, args):
+@torch.no_grad()
+def create_ema_model(model: torch.nn.Module) -> torch.nn.Module:
+    ema = copy.deepcopy(model).eval()
+    for p in ema.parameters():
+        p.requires_grad_(False)
+    return ema
+
+
+@torch.no_grad()
+def ema_update(ema_model: torch.nn.Module, model: torch.nn.Module, decay: float):
+    # Update parameters with EMA; copy buffers directly.
+    ema_params = dict(ema_model.named_parameters())
+    for name, p in model.named_parameters():
+        ema_params[name].mul_(decay).add_(p.detach(), alpha=1.0 - decay)
+
+    ema_buffers = dict(ema_model.named_buffers())
+    for name, b in model.named_buffers():
+        ema_buffers[name].copy_(b.detach())
+
+
+def lr_multiplier(step: int, total_steps: int, warmup_steps: int, min_lr_ratio: float) -> float:
+    if total_steps <= 1:
+        return 1.0
+
+    if warmup_steps > 0 and step < warmup_steps:
+        return float(step + 1) / float(max(1, warmup_steps))
+
+    if total_steps <= warmup_steps:
+        return 1.0
+
+    progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+    progress = min(max(progress, 0.0), 1.0)
+    cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+    return min_lr_ratio + (1.0 - min_lr_ratio) * cosine
+
+
+def set_optimizer_lr(optim: torch.optim.Optimizer, lr: float):
+    for pg in optim.param_groups:
+        pg["lr"] = lr
+
+
+def save_ckpt(path, model, ema_model, optim, step, args):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    state = {"step": step, "model": model.state_dict(), "optim": optim.state_dict(), "args": vars(args)}
+    state = {
+        "step": step,
+        "model": model.state_dict(),
+        "ema_model": ema_model.state_dict(),
+        "optim": optim.state_dict(),
+        "args": vars(args),
+    }
     tmp_path = f"{path}.tmp"
     torch.save(state, tmp_path)
     os.replace(tmp_path, path)
@@ -76,6 +125,9 @@ def main():
     p.add_argument("--steps", type=int, default=100000)
     p.add_argument("--batch", type=int, default=1)
     p.add_argument("--lr", type=float, default=1e-4)
+    p.add_argument("--min_lr_ratio", type=float, default=0.05, help="Final LR = lr * min_lr_ratio.")
+    p.add_argument("--warmup_steps", type=int, default=2000)
+    p.add_argument("--ema_decay", type=float, default=0.9999)
     p.add_argument("--num_workers", type=int, default=0)  # Windows 建议 0~2
     p.add_argument("--seed", type=int, default=0)
 
@@ -127,6 +179,7 @@ def main():
 
     cond_ch = 3 if args.include_mask_channel else 2
     model = UNetV2(x_ch=2, cond_ch=cond_ch, out_ch=2, base_ch=128).to(device)
+    ema_model = create_ema_model(model)
     trainer = EDMTrainer(
         sigma_min=args.sigma_min,
         sigma_max=args.sigma_max,
@@ -142,7 +195,18 @@ def main():
     start_step = 0
     if args.resume:
         ckpt = torch.load(args.resume, map_location="cpu")
-        model.load_state_dict(ckpt["model"], strict=True)
+        try:
+            model.load_state_dict(ckpt["model"], strict=True)
+        except RuntimeError as e:
+            raise RuntimeError(
+                "Resume checkpoint is incompatible with current model architecture. "
+                "Please start a fresh training run after the UNetV2 sigma/time-embedding upgrade."
+            ) from e
+        if "ema_model" in ckpt:
+            ema_model.load_state_dict(ckpt["ema_model"], strict=True)
+        else:
+            ema_model.load_state_dict(ckpt["model"], strict=True)
+            print("[warn] resume checkpoint has no ema_model; initialized EMA from model weights")
         optim.load_state_dict(ckpt["optim"])
         start_step = int(ckpt.get("step", 0))
         print(f"[resume] step={start_step} from {args.resume}")
@@ -161,42 +225,55 @@ def main():
         x0 = batch["target"].to(device)
         cond = batch["cond"].to(device)
 
+        cur_lr = args.lr * lr_multiplier(
+            step=step,
+            total_steps=args.steps,
+            warmup_steps=args.warmup_steps,
+            min_lr_ratio=args.min_lr_ratio,
+        )
+        set_optimizer_lr(optim, cur_lr)
+
         model.train()
         loss = trainer.loss(model, x0, cond)
         writer.add_scalar("train/loss", loss.item(), step)
-        writer.add_scalar("train/lr", optim.param_groups[0]["lr"], step)
+        writer.add_scalar("train/lr", cur_lr, step)
 
-        optim.zero_grad(set_to_none=True)
+        # Non-finite guard before backward.
+        if not torch.isfinite(loss):
+            print(f"[warn] non-finite loss at step {step+1}, skip")
+            continue
+
         optim.zero_grad(set_to_none=True)
         loss.backward()
 
         # 1) 梯度裁剪，防止偶发爆炸把权重推崩
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
-        # 2) 如果出现 NaN/Inf，直接跳过这步（不更新权重）
-        if not torch.isfinite(loss):
-            print(f"[warn] non-finite loss at step {step+1}, skip")
-            continue
-
         optim.step()
+        decay = min(float(args.ema_decay), (1.0 + step) / (10.0 + step))
+        ema_update(ema_model, model, decay=decay)
+        writer.add_scalar("train/ema_decay", decay, step)
 
         if (step + 1) % args.log_every == 0:
             dt = time.time() - t0
             t0 = time.time()
-            print(f"[step {step+1:07d}] loss={loss.item():.6f}  ({dt/args.log_every:.3f}s/iter)")
+            print(
+                f"[step {step+1:07d}] loss={loss.item():.6f} lr={cur_lr:.3e} "
+                f"ema_decay={decay:.6f} ({dt/args.log_every:.3f}s/iter)"
+            )
 
         if (step + 1) % args.val_every == 0:
-            vloss, vpsnr = val_metrics(model, trainer, val_loader, device, max_batches=20)
+            vloss, vpsnr = val_metrics(ema_model, trainer, val_loader, device, max_batches=20)
             writer.add_scalar("val/loss", vloss, step + 1)
             writer.add_scalar("val/psnr_proxy", vpsnr, step + 1)
-            print(f"[val @ {step+1:07d}] loss={vloss:.6f}  psnr(proxy)={vpsnr:.2f}dB")
+            print(f"[val(ema) @ {step+1:07d}] loss={vloss:.6f}  psnr(proxy)={vpsnr:.2f}dB")
 
         if (step + 1) % args.ckpt_every == 0:
-            save_ckpt(os.path.join(args.outdir, f"step_{step+1:07d}.pt"), model, optim, step + 1, args)
-            save_ckpt(os.path.join(args.outdir, "last.pt"), model, optim, step + 1, args)
+            save_ckpt(os.path.join(args.outdir, f"step_{step+1:07d}.pt"), model, ema_model, optim, step + 1, args)
+            save_ckpt(os.path.join(args.outdir, "last.pt"), model, ema_model, optim, step + 1, args)
             print(f"[ckpt] saved at step {step+1:07d}")
 
-    save_ckpt(os.path.join(args.outdir, "last.pt"), model, optim, args.steps, args)
+    save_ckpt(os.path.join(args.outdir, "last.pt"), model, ema_model, optim, args.steps, args)
     print("[done] training finished")
 
 
