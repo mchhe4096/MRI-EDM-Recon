@@ -83,6 +83,7 @@ python -m scripts.sample_val \
 补充：
 - 训练脚本使用 EDM 预条件目标，并支持 `--sigma_data`（默认 `0.5`）。
 - 采样脚本会优先读取 checkpoint 中的 `sigma_data`；不再支持旧 checkpoint 格式。
+- `UNetV2` 已升级为多层 sigma/time 注入结构，旧架构 checkpoint 不能直接 `--resume`。
 
 ## 5. 数据预处理
 
