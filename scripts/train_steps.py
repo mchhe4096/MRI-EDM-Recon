@@ -120,6 +120,7 @@ def main():
     p.add_argument("--accel", type=int, default=4)
     p.add_argument("--center_frac", type=float, default=0.08)
     p.add_argument("--include_mask_channel", action="store_true")
+    p.add_argument("--base_ch", type=int, default=128, help="UNet base channels.")
 
     # training
     p.add_argument("--steps", type=int, default=100000)
@@ -178,7 +179,7 @@ def main():
     )
 
     cond_ch = 3 if args.include_mask_channel else 2
-    model = UNetV2(x_ch=2, cond_ch=cond_ch, out_ch=2, base_ch=128).to(device)
+    model = UNetV2(x_ch=2, cond_ch=cond_ch, out_ch=2, base_ch=args.base_ch).to(device)
     ema_model = create_ema_model(model)
     trainer = EDMTrainer(
         sigma_min=args.sigma_min,

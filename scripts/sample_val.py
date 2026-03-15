@@ -50,6 +50,7 @@ def main():
     p.add_argument("--accel", type=int, default=4)
     p.add_argument("--center_frac", type=float, default=0.08)
     p.add_argument("--include_mask_channel", action="store_true")
+    p.add_argument("--base_ch", type=int, default=None, help="Override UNet base channels from checkpoint args.")
 
     # sampling params
     p.add_argument("--num_cases", type=int, default=8, help="Number of validation cases to sample. Use 0 for all.")
@@ -101,9 +102,10 @@ def main():
         raise ValueError(
             "Checkpoint was trained with legacy non-precondition objective, which is not supported anymore."
         )
+    base_ch = int(train_args.get("base_ch", 128)) if args.base_ch is None else int(args.base_ch)
 
     cond_ch = 3 if args.include_mask_channel else 2
-    model = UNetV2(x_ch=2, cond_ch=cond_ch, out_ch=2, base_ch=128).to(device)
+    model = UNetV2(x_ch=2, cond_ch=cond_ch, out_ch=2, base_ch=base_ch).to(device)
     if args.use_ema:
         if "ema_model" not in ckpt:
             raise ValueError(
@@ -140,7 +142,7 @@ def main():
     total_cases = len(ds) if args.num_cases == 0 else min(args.num_cases, len(ds))
     print(
         f"[info] sampling {total_cases}/{len(ds)} cases from {args.val_root}  "
-        f"(sigma_data={sigma_data:.4g}, weights={loaded_weights})"
+        f"(sigma_data={sigma_data:.4g}, base_ch={base_ch}, weights={loaded_weights})"
     )
 
     for case_idx, batch in enumerate(loader):
