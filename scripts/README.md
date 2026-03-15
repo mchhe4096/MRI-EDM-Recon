@@ -83,7 +83,7 @@ nohup python -m scripts.train_steps \
   --min_lr_ratio 0.05 \
   --ema_decay 0.9999 \
   --steps 100000 \
-  --batch 28 \
+  --batch 24 \
   --num_workers 8 \
   --outdir ../outputs/ckpts \
   > ../outputs/logs/train_${ts}.log 2>&1 &
@@ -106,7 +106,7 @@ nohup python -m scripts.train_steps \
   --min_lr_ratio 0.05 \
   --ema_decay 0.9999 \
   --steps 100000 \
-  --batch 28 \
+  --batch 24 \
   --num_workers 8 \
   --resume ../outputs/ckpts/last.pt \
   --outdir ../outputs/ckpts \
