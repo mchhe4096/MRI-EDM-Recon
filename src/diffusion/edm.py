@@ -1,19 +1,25 @@
 import torch
 import torch.nn.functional as F
 
-from .objective import edm_sample_sigma
+from .objective import edm_precond_coeffs, edm_sample_sigma
 from .sampler import sample_with_optional_dc
 
 
 class EDMTrainer:
     """
-    Minimal EDM-like wrapper:
-      - loss: sample sigma, add noise, predict x0, MSE(x0_pred, x0)
+    EDM wrapper:
+      - loss: sample sigma, preconditioned denoiser objective
       - sample: call sampler (optionally with DC)
     """
-    def __init__(self, sigma_min: float = 0.002, sigma_max: float = 80.0):
+    def __init__(
+        self,
+        sigma_min: float = 0.002,
+        sigma_max: float = 80.0,
+        sigma_data: float = 0.5,
+    ):
         self.sigma_min = float(sigma_min)
         self.sigma_max = float(sigma_max)
+        self.sigma_data = float(sigma_data)
 
     def loss(self, model, x0: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
         """
@@ -24,16 +30,17 @@ class EDMTrainer:
         B = x0.shape[0]
 
         # sample sigma per-sample
-        sigma = edm_sample_sigma(B, self.sigma_min, self.sigma_max, device=device)  # [B]
-        sigma_img = sigma.view(B, 1, 1, 1)
+        sigma = edm_sample_sigma(B, self.sigma_min, self.sigma_max, device=device)
 
         n = torch.randn_like(x0)
-        x_noisy = x0 + sigma_img * n
+        x_noisy = x0 + sigma * n
 
-        # model predicts x0 directly (simple + stable for now)
-        x0_pred = model(x_noisy, sigma_img, cond)
-
-        return F.mse_loss(x0_pred, x0)
+        # Standard EDM preconditioning.
+        # This is equivalent to weighted x0-MSE with w(sigma)=1/c_out^2.
+        c_skip, c_out, c_in, _ = edm_precond_coeffs(sigma, sigma_data=self.sigma_data)
+        f_pred = model(c_in * x_noisy, sigma, cond)
+        f_target = (x0 - c_skip * x_noisy) / (c_out + 1e-12)
+        return F.mse_loss(f_pred, f_target)
 
     @torch.no_grad()
     def sample(
@@ -53,6 +60,8 @@ class EDMTrainer:
         dc_every: int = 2,
         dc_lam: float = 0.15,
         dc_ramp: bool = False,
+
+        sigma_data: float | None = None,
     ) -> torch.Tensor:
         """
         shape: (B,2,H,W)
@@ -74,4 +83,6 @@ class EDMTrainer:
             dc_every=dc_every,
             dc_lam=dc_lam,
             dc_ramp=dc_ramp,
+
+            sigma_data=float(self.sigma_data if sigma_data is None else sigma_data),
         )

@@ -82,6 +82,7 @@ def main():
     # diffusion params
     p.add_argument("--sigma_min", type=float, default=0.002)
     p.add_argument("--sigma_max", type=float, default=80.0)
+    p.add_argument("--sigma_data", type=float, default=0.5)
 
     # logging/ckpt
     p.add_argument("--outdir", type=str, default="../outputs/ckpts")
@@ -126,7 +127,11 @@ def main():
 
     cond_ch = 3 if args.include_mask_channel else 2
     model = UNetV2(x_ch=2, cond_ch=cond_ch, out_ch=2, base_ch=128).to(device)
-    trainer = EDMTrainer(sigma_min=args.sigma_min, sigma_max=args.sigma_max)
+    trainer = EDMTrainer(
+        sigma_min=args.sigma_min,
+        sigma_max=args.sigma_max,
+        sigma_data=args.sigma_data,
+    )
 
     logdir = "/root/tf-logs"
     run_name = time.strftime("run_%Y%m%d_%H%M%S")

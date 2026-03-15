@@ -66,6 +66,7 @@ def main():
     p.add_argument("--dc_every", type=int, default=2)       # apply every N steps after start
     p.add_argument("--dc_lam", type=float, default=0.15)    # base lambda for soft DC
     p.add_argument("--dc_ramp", action="store_true")        # ramp lam to 0.25 towards the end
+    p.add_argument("--sigma_data", type=float, default=None, help="Override sigma_data from checkpoint args.")
 
     p.add_argument("--outdir", type=str, default="../outputs/samples")
     args = p.parse_args()
@@ -84,13 +85,27 @@ def main():
 
     sigma_min = float(train_args.get("sigma_min", 0.002))
     sigma_max = float(train_args.get("sigma_max", 80.0))
+    if "sigma_data" not in train_args and args.sigma_data is None:
+        raise ValueError(
+            "Checkpoint does not contain sigma_data. Old checkpoint format is not supported anymore. "
+            "Please retrain with the new EDM preconditioning objective."
+        )
+    sigma_data = float(train_args.get("sigma_data", 0.5)) if args.sigma_data is None else float(args.sigma_data)
+    if train_args.get("precondition", True) is False:
+        raise ValueError(
+            "Checkpoint was trained with legacy non-precondition objective, which is not supported anymore."
+        )
 
     cond_ch = 3 if args.include_mask_channel else 2
     model = UNetV2(x_ch=2, cond_ch=cond_ch, out_ch=2, base_ch=128).to(device)
     model.load_state_dict(ckpt["model"], strict=True)
     model.eval()
 
-    trainer = EDMTrainer(sigma_min=sigma_min, sigma_max=sigma_max)
+    trainer = EDMTrainer(
+        sigma_min=sigma_min,
+        sigma_max=sigma_max,
+        sigma_data=sigma_data,
+    )
 
     ds = PtKspaceReconDataset(
         root=args.val_root,
@@ -101,7 +116,10 @@ def main():
     loader = DataLoader(ds, batch_size=1, shuffle=False, num_workers=0)
 
     total_cases = len(ds) if args.num_cases == 0 else min(args.num_cases, len(ds))
-    print(f"[info] sampling {total_cases}/{len(ds)} cases from {args.val_root}")
+    print(
+        f"[info] sampling {total_cases}/{len(ds)} cases from {args.val_root}  "
+        f"(sigma_data={sigma_data:.4g})"
+    )
 
     for case_idx, batch in enumerate(loader):
         if case_idx >= total_cases:

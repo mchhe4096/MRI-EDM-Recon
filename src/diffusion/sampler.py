@@ -1,6 +1,7 @@
 import torch
 from typing import Optional
 
+from .objective import edm_denoise
 from src.mri.data_consistency import dc_soft_kspace
 
 
@@ -53,10 +54,11 @@ def sample_with_optional_dc(
     dc_every: int = 2,
     dc_lam: float = 0.15,
     dc_ramp: bool = False,
+    sigma_data: float = 0.5,
 ):
     """
     EDM-style sampler (Karras schedule + Euler / Heun).
-    Assumes model predicts x0 given (x, sigma, cond).
+    Assumes model predicts EDM F_theta(c_in * x, sigma, cond); converted to x0 internally.
 
     shape: (B,2,H,W)
     cond:  [B,C,H,W]
@@ -93,7 +95,7 @@ def sample_with_optional_dc(
             sigma_b = sigma_hat_b  # use sigma_hat for denoise step
 
         # --- denoise (predict x0) ---
-        x0 = model(x, sigma_b, cond)
+        x0, _ = edm_denoise(model, x, sigma_b, cond, sigma_data=sigma_data)
         d = _to_d(x, x0, sigma_b)
 
         # Euler step
@@ -101,7 +103,7 @@ def sample_with_optional_dc(
 
         if heun and sigma_next > 0:
             # Heun correction: evaluate derivative at next point
-            x0_next = model(x_euler, sigma_next_b, cond)
+            x0_next, _ = edm_denoise(model, x_euler, sigma_next_b, cond, sigma_data=sigma_data)
             d_next = _to_d(x_euler, x0_next, sigma_next_b)
             x = x + (sigma_next_b - sigma_b) * (0.5 * d + 0.5 * d_next)
         else:
