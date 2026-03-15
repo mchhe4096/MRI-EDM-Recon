@@ -19,8 +19,8 @@
 ```bash
 cd /root/autodl-tmp/my-project
 python -m scripts.train_steps \
-  --train_root ../train \
-  --val_root ../val \
+  --train_root /root/autodl-tmp/train_v2 \
+  --val_root /root/autodl-tmp/val_v2 \
   --include_mask_channel \
   --sigma_data 0.5 \
   --steps 100000 \
@@ -34,8 +34,8 @@ python -m scripts.train_steps \
 ```bash
 cd /root/autodl-tmp/my-project
 python -m scripts.train_steps \
-  --train_root ../train \
-  --val_root ../val \
+  --train_root /root/autodl-tmp/train_v2 \
+  --val_root /root/autodl-tmp/val_v2 \
   --include_mask_channel \
   --sigma_data 0.5 \
   --steps 100000 \
@@ -51,7 +51,7 @@ python -m scripts.train_steps \
 cd /root/autodl-tmp/my-project
 python -m scripts.sample_val \
   --ckpt ../outputs/ckpts/last.pt \
-  --val_root ../val \
+  --val_root /root/autodl-tmp/val_v2 \
   --include_mask_channel \
   --num_cases 8 \
   --num_samples 1 \
@@ -71,7 +71,7 @@ python -m scripts.sample_val \
 cd /root/autodl-tmp/my-project
 python -m scripts.sample_val \
   --ckpt ../outputs/ckpts/last.pt \
-  --val_root ../val \
+  --val_root /root/autodl-tmp/val_v2 \
   --include_mask_channel \
   --num_cases 0 \
   --num_samples 5 \
@@ -88,7 +88,20 @@ python -m scripts.sample_val \
 
 ```bash
 cd /root/autodl-tmp/my-project
-python -m scripts.data_process
+# 1) 重新导出 train（统一尺度：只对 kspace 做归一化）
+python -m scripts.data_process \
+  --input_dir /root/autodl-tmp/train \
+  --output_dir /root/autodl-tmp/train_v2 \
+  --clean_output
+
+# 2) 重新导出 val
+python -m scripts.data_process \
+  --input_dir /root/autodl-tmp/val \
+  --output_dir /root/autodl-tmp/val_v2 \
+  --clean_output
 ```
 
-说明：当前数据集按 `--accel` 和 `--center_frac` 动态生成 mask。
+说明：
+- 这一步会生成统一尺度数据（`scale_mode=kspace_mag_std_single`），需要重跑后再训练。
+- 新目录与原始 `train` / `val` 同级：`/root/autodl-tmp/train_v2`、`/root/autodl-tmp/val_v2`。
+- 当前数据集按 `--accel` 和 `--center_frac` 动态生成 mask。
