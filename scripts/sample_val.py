@@ -49,7 +49,12 @@ def main():
     # dataset params (must match train)
     p.add_argument("--accel", type=int, default=4)
     p.add_argument("--center_frac", type=float, default=0.08)
-    p.add_argument("--include_mask_channel", action="store_true")
+    p.add_argument(
+        "--include_mask_channel",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Override include_mask_channel from checkpoint args.",
+    )
     p.add_argument("--base_ch", type=int, default=None, help="Override UNet base channels from checkpoint args.")
 
     # sampling params
@@ -73,6 +78,19 @@ def main():
     p.add_argument("--dc_every", type=int, default=2)       # apply every N steps after start
     p.add_argument("--dc_lam", type=float, default=0.15)    # base lambda for soft DC
     p.add_argument("--dc_ramp", action="store_true")        # ramp lam to 0.25 towards the end
+    p.add_argument(
+        "--init_mode",
+        type=str,
+        default="zf",
+        choices=["noise", "zf", "blend"],
+        help="Sampler initialization mode.",
+    )
+    p.add_argument(
+        "--init_blend",
+        type=float,
+        default=0.5,
+        help="Blend alpha used when --init_mode=blend (alpha*x_zf + (1-alpha)*noise).",
+    )
     p.add_argument("--sigma_data", type=float, default=None, help="Override sigma_data from checkpoint args.")
 
     p.add_argument("--outdir", type=str, default="../outputs/samples")
@@ -103,8 +121,13 @@ def main():
             "Checkpoint was trained with legacy non-precondition objective, which is not supported anymore."
         )
     base_ch = int(train_args.get("base_ch", 128)) if args.base_ch is None else int(args.base_ch)
+    include_mask_channel = bool(
+        train_args.get("include_mask_channel", True)
+        if args.include_mask_channel is None
+        else args.include_mask_channel
+    )
 
-    cond_ch = 3 if args.include_mask_channel else 2
+    cond_ch = 3 if include_mask_channel else 2
     model = UNetV2(x_ch=2, cond_ch=cond_ch, out_ch=2, base_ch=base_ch).to(device)
     if args.use_ema:
         if "ema_model" not in ckpt:
@@ -135,14 +158,17 @@ def main():
         root=args.val_root,
         accel=args.accel,
         center_frac=args.center_frac,
-        include_mask_channel=args.include_mask_channel,
+        include_mask_channel=include_mask_channel,
     )
     loader = DataLoader(ds, batch_size=1, shuffle=False, num_workers=0)
 
     total_cases = len(ds) if args.num_cases == 0 else min(args.num_cases, len(ds))
     print(
         f"[info] sampling {total_cases}/{len(ds)} cases from {args.val_root}  "
-        f"(sigma_data={sigma_data:.4g}, base_ch={base_ch}, weights={loaded_weights})"
+        f"(sigma_data={sigma_data:.4g}, base_ch={base_ch}, weights={loaded_weights}, "
+        f"include_mask_channel={include_mask_channel}, init={args.init_mode}"
+        + (f"(a={args.init_blend:.2f})" if args.init_mode == "blend" else "")
+        + ")"
     )
 
     for case_idx, batch in enumerate(loader):
@@ -182,6 +208,8 @@ def main():
                 dc_every=args.dc_every,
                 dc_lam=args.dc_lam,
                 dc_ramp=args.dc_ramp,
+                init_mode=args.init_mode,
+                init_blend=float(args.init_blend),
             )
             samples.append(x[0].detach().cpu())
             save_img(os.path.join(case_dir, f"sample_{n:02d}.png"), to_mag(x[0]))
@@ -209,12 +237,19 @@ def main():
                 "target": target[0].detach().cpu(),    # [2,H,W]
                 "x_zf": x_zf[0].detach().cpu(),        # [2,H,W]
                 "mask": mask[0].detach().cpu(),        # [1,H,W]
+                "init_mode": args.init_mode,
+                "init_blend": float(args.init_blend),
+                "include_mask_channel": include_mask_channel,
             }
             if args.save_all_samples_pt:
                 result["samples"] = stack              # [N,2,H,W]
             torch.save(result, os.path.join(case_dir, "result.pt"))
 
-        print(f"[case {case_idx:03d}] psnr(mean)={case_psnr:.2f} dB  saved to {case_dir}  dc={args.dc}")
+        print(
+            f"[case {case_idx:03d}] psnr(mean)={case_psnr:.2f} dB  saved to {case_dir}  "
+            f"dc={args.dc} init={args.init_mode}"
+            + (f"(a={args.init_blend:.2f})" if args.init_mode == "blend" else "")
+        )
 
 
 if __name__ == "__main__":

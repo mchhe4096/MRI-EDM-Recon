@@ -62,6 +62,8 @@ class EDMTrainer:
         dc_ramp: bool = False,
 
         sigma_data: float | None = None,
+        init_mode: str = "zf",
+        init_blend: float = 0.5,
     ) -> torch.Tensor:
         """
         shape: (B,2,H,W)
@@ -85,4 +87,6 @@ class EDMTrainer:
             dc_ramp=dc_ramp,
 
             sigma_data=float(self.sigma_data if sigma_data is None else sigma_data),
+            init_mode=init_mode,
+            init_blend=init_blend,
         )

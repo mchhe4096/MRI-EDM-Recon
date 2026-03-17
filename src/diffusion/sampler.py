@@ -33,6 +33,44 @@ def _to_d(x: torch.Tensor, x0: torch.Tensor, sigma: torch.Tensor) -> torch.Tenso
     return (x - x0) / (sigma + 1e-12)
 
 
+def _init_state(
+    shape,
+    cond: torch.Tensor,
+    sigma0: torch.Tensor,
+    init_mode: str,
+    init_blend: float,
+) -> torch.Tensor:
+    """
+    Initialize sampling state for conditional reconstruction.
+
+    init_mode:
+      - "noise": pure Gaussian initialization (legacy behavior)
+      - "zf": initialize from zero-filled reconstruction (cond[:, :2])
+      - "blend": alpha * x_zf + (1-alpha) * noise, alpha=init_blend
+    """
+    device = cond.device
+    noise = torch.randn(shape, device=device) * sigma0
+
+    mode = str(init_mode).lower()
+    if mode == "noise":
+        return noise
+
+    if cond.shape[1] < 2:
+        raise ValueError(f"cond must have at least 2 channels for x_zf init, got shape={tuple(cond.shape)}")
+    x_zf = cond[:, :2]
+    if tuple(x_zf.shape) != tuple(shape):
+        raise ValueError(f"x_zf shape mismatch: x_zf={tuple(x_zf.shape)} shape={tuple(shape)}")
+
+    if mode == "zf":
+        return x_zf.clone()
+
+    if mode == "blend":
+        alpha = float(max(0.0, min(1.0, init_blend)))
+        return alpha * x_zf + (1.0 - alpha) * noise
+
+    raise ValueError(f"Unsupported init_mode: {init_mode}")
+
+
 @torch.no_grad()
 def sample_with_optional_dc(
     model,
@@ -55,6 +93,8 @@ def sample_with_optional_dc(
     dc_lam: float = 0.15,
     dc_ramp: bool = False,
     sigma_data: float = 0.5,
+    init_mode: str = "zf",
+    init_blend: float = 0.5,
 ):
     """
     EDM-style sampler (Karras schedule + Euler / Heun).
@@ -69,8 +109,13 @@ def sample_with_optional_dc(
     B = shape[0]
 
     sigmas = _sigma_schedule_karras(steps, sigma_min, sigma_max, rho=rho, device=device)  # [steps+1]
-    # initial noise
-    x = torch.randn(shape, device=device) * sigmas[0]
+    x = _init_state(
+        shape=shape,
+        cond=cond,
+        sigma0=sigmas[0],
+        init_mode=init_mode,
+        init_blend=init_blend,
+    )
 
     # optional: "churn" (stochasticity) like EDM paper; default off (s_churn=0)
     for i in range(steps):
