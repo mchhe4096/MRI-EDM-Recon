@@ -1,34 +1,57 @@
-# Gradio Inference Demo
+# MRI 重建封装（Gradio）
 
-This demo is a local web app for single-slice MRI reconstruction.
+这是一个本地网页软件，用于单切片 MRI 重建。
 
-- Input: one `.pt` file containing `kspace_full`
-- Output: reconstructed MRI image (`Recon`)
+## 1. 输入与输出
 
-## 1. Install
+- 输入 `.pt`（两种格式都支持）：
+  - 推荐：`k_us + mask`（真实欠采样输入）
+  - 兼容：`kspace_full`（程序会按配置模拟欠采样）
+- 输出：
+  - `Recon` 重建图
+  - `ZF` 零填充基线
+  - `GT`（若输入含 `img_gt`）
+  - `样本标准差图` 和 `多样本画廊`（用于展示多解能力）
+
+## 2. 首次使用（初始化环境）
+
+在项目根目录执行：
 
 ```bash
-cd D:\MRI\MRI-EDM-Recon
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-## 2. Run
+## 3. 启动方式（推荐）
+
+双击项目根目录下的 `run.bat`。
+
+等价命令行方式：
+
+```bash
+.\run.bat
+```
+
+备用方式：
 
 ```bash
 python app.py
 ```
 
-Open `http://127.0.0.1:7860`.
+启动后打开：`http://127.0.0.1:7860`
 
-## 3. Notes
+## 4. 使用建议
 
-- Default checkpoint path is `outputs/ckpts/last.pt`.
-- If your checkpoint has no `ema_model`, disable `Use EMA Weights`.
-- `GT` is shown only when uploaded `.pt` includes `img_gt`.
-- `Evaluation Protocol` options:
-  - `current`: current project PSNR metric.
-  - `author`: author-style PSNR protocol (`author_norm` + range-based PSNR).
-  - `both`: display both metrics side by side.
+- 普通演示：直接用“参数预设”中的“标准质量”，然后点“开始重建”
+- 想展示算法优势：选择“多样性展示”，并把“采样次数”调大（如 4-6）
+- 指标口径：
+  - 当前项目口径
+  - 论文基线口径
+  - 两者可同时显示（只影响指标，不影响图像）
+
+## 5. 关于 h5py
+
+本软件推理只接收 `.pt`，运行不依赖 `h5py`。  
+只有在你需要把 `.h5` 预处理成 `.pt`（`scripts/data_process.py`）时，才需要安装 `h5py`。
 
