@@ -32,6 +32,52 @@ def _to_uint8(img_hw: torch.Tensor) -> np.ndarray:
     return (arr * 255.0).astype(np.uint8)
 
 
+def _psnr_mag(pred_mag: torch.Tensor, gt_mag: torch.Tensor, eps: float = 1e-12) -> float:
+    mse = torch.mean((pred_mag - gt_mag) ** 2)
+    maxv = torch.max(gt_mag).clamp_min(eps)
+    return float((20.0 * torch.log10(maxv / torch.sqrt(mse + eps))).item())
+
+
+def _normalize_complex_np(data: np.ndarray, eps: float = 1e-8) -> np.ndarray:
+    mag_std = float(np.abs(data).std())
+    return data / (mag_std + eps)
+
+
+def _zscore_np(data: np.ndarray, eps: float = 1e-8) -> np.ndarray:
+    return (data - float(data.mean())) / (float(data.std()) + eps)
+
+
+def _author_prepare_mag_from_complex2(x2: torch.Tensor, eps: float = 1e-8) -> np.ndarray:
+    real = x2[0].detach().cpu().numpy().astype(np.float32)
+    imag = x2[1].detach().cpu().numpy().astype(np.float32)
+    cimg = real + 1j * imag
+    cimg = _normalize_complex_np(cimg, eps=eps)
+    mag = np.abs(cimg).astype(np.float32)
+    return _zscore_np(mag, eps=eps).astype(np.float32)
+
+
+def _psnr_from_arrays(pred: np.ndarray, gt: np.ndarray, data_range: float, eps: float = 1e-12) -> float:
+    if not np.isfinite(data_range) or data_range <= eps:
+        return float("nan")
+    diff = pred.astype(np.float64) - gt.astype(np.float64)
+    mse = float(np.mean(diff * diff))
+    if not np.isfinite(mse):
+        return float("nan")
+    return float(20.0 * np.log10((data_range + eps) / np.sqrt(mse + eps)))
+
+
+def _author_psnr(pred2: torch.Tensor, gt2: torch.Tensor, author_norm: bool, author_eps: float) -> float:
+    if author_norm:
+        pred = _author_prepare_mag_from_complex2(pred2, eps=author_eps)
+        gt = _author_prepare_mag_from_complex2(gt2, eps=author_eps)
+    else:
+        pred = _to_mag(pred2).detach().cpu().numpy().astype(np.float32)
+        gt = _to_mag(gt2).detach().cpu().numpy().astype(np.float32)
+
+    data_range = float(np.max(gt) - np.min(gt))
+    return _psnr_from_arrays(pred=pred, gt=gt, data_range=data_range, eps=author_eps)
+
+
 @lru_cache(maxsize=4)
 def _load_bundle(
     ckpt_path: str,
@@ -96,7 +142,14 @@ def reconstruct_from_pt(
     dc_ramp: bool,
     use_ema: bool,
     include_mask_channel_mode: str = "auto",
+    eval_protocol: str = "current",
+    author_norm: bool = True,
+    author_eps: float = 1e-8,
 ):
+    protocol = str(eval_protocol).lower()
+    if protocol not in {"current", "author", "both"}:
+        raise ValueError("eval_protocol must be one of: current, author, both")
+
     pt_path = str(Path(pt_path).expanduser().resolve())
     ckpt_path = str(Path(ckpt_path).expanduser().resolve())
 
@@ -119,7 +172,7 @@ def reconstruct_from_pt(
     k_full = _ensure_2chw(data["kspace_full"])
     h, w = int(k_full.shape[1]), int(k_full.shape[2])
 
-    mask = cartesian_mask((h, w), accel=accel, center_frac=center_frac)  # [1,1,H,W]
+    mask = cartesian_mask((h, w), accel=accel, center_frac=center_frac)
     k_us = k_full.unsqueeze(0) * mask
     x_zf = ifft2c(k_us).squeeze(0)
 
@@ -160,12 +213,25 @@ def reconstruct_from_pt(
         f"shape={tuple(recon.shape)}",
         f"accel={accel}, center_frac={center_frac}",
         f"steps={int(steps)}, dc={bool(dc)}, init={init_mode}, init_blend={float(init_blend):.2f}",
+        f"eval_protocol={protocol}",
     ]
+
     if target is not None:
-        mse = torch.mean((recon_mag - gt_mag) ** 2)
-        maxv = torch.max(gt_mag).clamp_min(1e-12)
-        psnr = float((20.0 * torch.log10(maxv / torch.sqrt(mse + 1e-12))).item())
-        info_lines.append(f"psnr(recon, gt)={psnr:.2f} dB")
+        if protocol in {"current", "both"}:
+            recon_current = _psnr_mag(recon_mag, gt_mag)
+            zf_current = _psnr_mag(zf_mag, gt_mag)
+            info_lines.append(f"current_psnr(recon,gt)={recon_current:.2f} dB")
+            info_lines.append(f"current_psnr(zf,gt)={zf_current:.2f} dB")
+
+        if protocol in {"author", "both"}:
+            recon_author = _author_psnr(recon, target, author_norm=bool(author_norm), author_eps=float(author_eps))
+            zf_author = _author_psnr(x_zf, target, author_norm=bool(author_norm), author_eps=float(author_eps))
+            info_lines.append(
+                f"author_psnr(recon,gt)={recon_author:.2f} dB (norm={'on' if author_norm else 'off'})"
+            )
+            info_lines.append(f"author_psnr(zf,gt)={zf_author:.2f} dB")
+    else:
+        info_lines.append("No img_gt in input file; PSNR metrics are skipped.")
 
     return _to_uint8(recon_mag), _to_uint8(zf_mag), (_to_uint8(gt_mag) if gt_mag is not None else None), "\n".join(
         info_lines
