@@ -1,9 +1,30 @@
-# 所有缓存文件
-*.pyc
-/_pycache_
+# Python cache and artifacts
+__pycache__/
+*.py[cod]
+*.pyo
 
-# VSCode 工作区文件
-New.code-workspace
+# Virtual environments
+.venv/
+venv/
+env/
 
-# 日记文件
-/logs
+# IDE/editor
+.vscode/
+.idea/
+*.code-workspace
+
+# Logs
+logs/
+*.log
+
+# Local datasets and outputs (large files)
+outputs/
+val/
+val_pt/
+
+# Local docs drafts
+docs/
+
+# OS files
+.DS_Store
+Thumbs.db
