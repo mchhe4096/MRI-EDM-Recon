@@ -18,11 +18,14 @@ def _run_recon(
     dc_ramp: bool,
     use_ema: bool,
     include_mask_channel_mode: str,
+    eval_protocol: str,
+    author_norm: bool,
+    author_eps: float,
 ):
     if not file_path:
         raise gr.Error("请先上传一个 .pt 文件。")
     if not ckpt_path:
-        raise gr.Error("请填写 checkpoint 路径（例如 outputs/ckpts/last.pt）。")
+        raise gr.Error("请填写 checkpoint 路径，例如 outputs/ckpts/last.pt")
 
     try:
         recon, zf, gt, info = reconstruct_from_pt(
@@ -38,6 +41,9 @@ def _run_recon(
             dc_ramp=dc_ramp,
             use_ema=use_ema,
             include_mask_channel_mode=include_mask_channel_mode,
+            eval_protocol=eval_protocol,
+            author_norm=author_norm,
+            author_eps=author_eps,
         )
     except Exception as e:
         raise gr.Error(f"重建失败: {e}") from e
@@ -58,39 +64,44 @@ def _toggle_dc(dc: bool):
     )
 
 
-with gr.Blocks(title="MRI-EDM-Recon Demo") as demo:
+def _toggle_author_options(protocol: str):
+    visible = protocol in {"author", "both"}
+    return gr.update(visible=visible), gr.update(visible=visible)
+
+
+with gr.Blocks(title="MRI 重建演示") as demo:
     gr.Markdown("## MRI 重建演示（Gradio）")
-    gr.Markdown("上传单个 `.pt` 切片（需包含 `kspace_full`），输出重建后的 MRI 图像。")
+    gr.Markdown("输入一个包含 `kspace_full` 的 `.pt` 切片，输出重建后的 MRI 图像。")
 
     with gr.Row():
         with gr.Column(scale=1):
-            file_input = gr.File(label="输入 MRI 切片 (.pt)", file_types=[".pt"], type="filepath")
+            file_input = gr.File(label="输入 MRI 切片（.pt）", file_types=[".pt"], type="filepath")
             ckpt_input = gr.Textbox(
                 label="Checkpoint 路径",
                 value="outputs/ckpts/last.pt",
-                placeholder="例如: outputs/ckpts/last.pt",
+                placeholder="例如：outputs/ckpts/last.pt",
             )
             use_ema_input = gr.Checkbox(label="使用 EMA 权重", value=True)
             include_mask_mode = gr.Radio(
                 choices=["auto", "true", "false"],
                 value="auto",
                 label="include_mask_channel",
-                info="auto=跟随checkpoint训练参数",
+                info="auto 表示跟随 checkpoint 中的训练参数",
             )
 
-            steps_input = gr.Slider(minimum=10, maximum=100, step=1, value=40, label="采样步数 steps")
-            dc_input = gr.Checkbox(label="启用数据一致性 DC", value=True)
+            steps_input = gr.Slider(minimum=10, maximum=100, step=1, value=40, label="采样步数")
+            dc_input = gr.Checkbox(label="启用数据一致性（DC）", value=True)
             init_mode_input = gr.Dropdown(
                 choices=["zf", "noise", "blend"],
                 value="zf",
-                label="采样初始化 init_mode",
+                label="初始化模式",
             )
             init_blend_input = gr.Slider(
                 minimum=0.0,
                 maximum=1.0,
                 step=0.05,
                 value=0.5,
-                label="blend 系数 init_blend",
+                label="混合系数（Blend Alpha）",
                 visible=False,
             )
 
@@ -99,19 +110,33 @@ with gr.Blocks(title="MRI-EDM-Recon Demo") as demo:
             dc_lam_input = gr.Slider(minimum=0.01, maximum=1.0, step=0.01, value=0.15, label="dc_lam", visible=True)
             dc_ramp_input = gr.Checkbox(label="dc_ramp", value=False, visible=True)
 
+            eval_protocol_input = gr.Dropdown(
+                choices=["current", "author", "both"],
+                value="both",
+                label="评估口径",
+                info="author 口径由于评估方式不同，PSNR 可能更高",
+            )
+            author_norm_input = gr.Checkbox(label="author_norm", value=True, visible=True)
+            author_eps_input = gr.Number(label="author_eps", value=1e-8, precision=10, visible=True)
+
             run_btn = gr.Button("开始重建", variant="primary")
 
         with gr.Column(scale=1):
-            recon_output = gr.Image(label="重建结果 Recon", type="numpy")
-            zf_output = gr.Image(label="零填充重建 ZF", type="numpy")
-            gt_output = gr.Image(label="GT（若输入含 img_gt）", type="numpy")
-            info_output = gr.Textbox(label="运行信息", lines=8)
+            recon_output = gr.Image(label="重建结果（Recon）", type="numpy")
+            zf_output = gr.Image(label="零填充结果（ZF）", type="numpy")
+            gt_output = gr.Image(label="GT（若输入包含 img_gt）", type="numpy")
+            info_output = gr.Textbox(label="运行信息与指标", lines=12)
 
     init_mode_input.change(_toggle_blend, inputs=[init_mode_input], outputs=[init_blend_input])
     dc_input.change(
         _toggle_dc,
         inputs=[dc_input],
         outputs=[dc_start_input, dc_every_input, dc_lam_input, dc_ramp_input],
+    )
+    eval_protocol_input.change(
+        _toggle_author_options,
+        inputs=[eval_protocol_input],
+        outputs=[author_norm_input, author_eps_input],
     )
 
     run_btn.click(
@@ -129,6 +154,9 @@ with gr.Blocks(title="MRI-EDM-Recon Demo") as demo:
             dc_ramp_input,
             use_ema_input,
             include_mask_mode,
+            eval_protocol_input,
+            author_norm_input,
+            author_eps_input,
         ],
         outputs=[recon_output, zf_output, gt_output, info_output],
     )
@@ -136,4 +164,3 @@ with gr.Blocks(title="MRI-EDM-Recon Demo") as demo:
 
 if __name__ == "__main__":
     demo.queue(max_size=8).launch(server_name="127.0.0.1", server_port=7860, inbrowser=True)
-

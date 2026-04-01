@@ -1,6 +1,6 @@
 # Gradio Inference Demo
 
-This demo is a local web app for single-slice MRI reconstruction:
+This demo is a local web app for single-slice MRI reconstruction.
 
 - Input: one `.pt` file containing `kspace_full`
 - Output: reconstructed MRI image (`Recon`)
@@ -25,6 +25,10 @@ Open `http://127.0.0.1:7860`.
 ## 3. Notes
 
 - Default checkpoint path is `outputs/ckpts/last.pt`.
-- If your checkpoint has no `ema_model`, uncheck `使用 EMA 权重`.
-- `GT` will only be shown when uploaded `.pt` includes `img_gt`.
+- If your checkpoint has no `ema_model`, disable `Use EMA Weights`.
+- `GT` is shown only when uploaded `.pt` includes `img_gt`.
+- `Evaluation Protocol` options:
+  - `current`: current project PSNR metric.
+  - `author`: author-style PSNR protocol (`author_norm` + range-based PSNR).
+  - `both`: display both metrics side by side.
 
