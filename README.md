@@ -2,56 +2,48 @@
 
 ## 项目简介
 
-本项目是本科大创项目，聚焦于**欠采样 MRI 重建**。  
-磁共振成像（MRI）具有软组织高对比度和无辐射的优势，但采集速度较慢。常见加速策略是对 **K 空间**进行欠采样，但这会带来不适定重建问题。
-
-现有主流方法通常依赖监督学习的深度神经网络，往往只给出单一重建结果，难以评估不确定性。  
-本项目探索基于 **扩散模型（Diffusion Model）** 的 MRI 重建方法，从潜在分布中采样多个可能解，以提升重建结果的可靠性分析能力。
+本项目聚焦于**欠采样 MRI 重建**，基于扩散模型（Diffusion Model）进行图像重建。  
+MRI 采集速度受限，常见加速方式是对 k-space 欠采样，但会引入伪影并增加重建难度。  
+本项目结合扩散采样与 MRI 数据一致性约束，探索在欠采样条件下获得稳定、可对比的重建结果。
 
 ## 项目目标
 
-- 构建面向欠采样 MRI 的扩散重建框架
+- 构建面向欠采样 MRI 的扩散重建流程
 - 结合 MRI 物理先验（如数据一致性）提升重建质量
-- 支持多次采样与结果对比，分析重建不确定性
+- 支持多次采样与结果对比，分析重建稳定性
+
+## 快速开始（Windows）
+
+在项目根目录执行：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+.\run.bat
+```
+
+启动后访问：`http://127.0.0.1:7860`
+
+说明：
+- 默认 checkpoint 路径为 `outputs/ckpts/last.pt`
+- 输入为单切片 `.pt`，推荐包含 `k_us + mask`，也兼容 `kspace_full`
 
 ## 项目结构
 
 ```text
-my-project/
-├── src/                         # 核心源码
-│   ├── data/                    # 数据集与预处理
-│   │   ├── datasets.py
-│   │   └── transforms.py
-│   ├── diffusion/               # 扩散模型核心逻辑
-│   │   ├── edm.py
-│   │   ├── objective.py
-│   │   └── sampler.py
-│   ├── models/                  # 网络结构（UNet 及其变体）
-│   │   ├── unet.py
-│   │   └── unet_v2.py
-│   ├── mri/                     # MRI 相关算子与约束
-│   │   ├── conditioning.py
-│   │   ├── data_consistency.py
-│   │   ├── mask.py
-│   │   └── operators.py
-│   └── train/                   # 训练循环
-│       └── train_loop.py
+MRI-EDM-Recon/
+├── app.py                       # Gradio 应用入口
+├── services/                    # 封装推理逻辑与指标计算
+├── src/                         # 核心算法代码（模型/采样/MRI 算子/训练）
 ├── scripts/                     # 训练、采样、数据处理脚本
-│   ├── data_process.py
-│   ├── sample_param_search.py
-│   ├── sample_val.py
-│   └── train_steps.py
-├── Comparison/                  # 对比实验与参数搜索相关代码
-│   ├── sample_param_search_author.py
-│   └── README.md
-├── Comp_Fix/                    # 对比/复现实验的修正脚本
-│   └── reval_tb.py
-├── .gitignore
-└── New.code-workspace
+├── Comparison/                  # 对比实验与口径相关脚本
+├── requirements.txt             # 依赖清单
+├── run.bat                      # Windows 一键启动脚本
+└── README_GRADIO.md             # Gradio 使用说明（详细）
 ```
 
-## 说明
+## 使用说明入口
 
-- `src/` 是主要开发区域，包含模型、扩散过程、MRI 物理约束与训练流程。
-- `scripts/` 提供实验入口脚本，便于快速训练和采样验证。
-- `Comparison/` 与 `Comp_Fix/` 用于对比实验与复现实验修正。
+- Gradio 封装使用文档：[`README_GRADIO.md`](README_GRADIO.md)
+- 算法与实验代码入口：`src/`、`scripts/`、`Comparison/`
